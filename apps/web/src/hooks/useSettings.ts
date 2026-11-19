@@ -1,4 +1,5 @@
 import { thrownErrorMessage } from "@t3tools/client-runtime/errors";
+import { defaultUiLanguage } from "@t3tools/client-runtime/locales";
 import { useRef, useSyncExternalStore, use } from "react";
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
@@ -73,7 +74,14 @@ type UnifiedSettingsPatch = ServerSettingsPatch & ClientSettingsPatch;
 const clientSettingsListeners = new Set<() => void>();
 const clientSettingsHydrationListeners = new Set<() => void>();
 type ClientSettingsHydrationStatus = "pending" | "ready" | "failed" | "retrying";
-let clientSettingsSnapshot = DEFAULT_CLIENT_SETTINGS;
+const desktopPlatform =
+  typeof window === "undefined" ? undefined : window.desktopBridge?.getClientPlatform?.();
+const defaultLanguage = defaultUiLanguage(desktopPlatform);
+const defaultClientSettings =
+  defaultLanguage === DEFAULT_CLIENT_SETTINGS.language
+    ? DEFAULT_CLIENT_SETTINGS
+    : { ...DEFAULT_CLIENT_SETTINGS, language: defaultLanguage };
+let clientSettingsSnapshot: ClientSettings = defaultClientSettings;
 let clientSettingsHydrationStatus: ClientSettingsHydrationStatus = "pending";
 let clientSettingsHydrationPromise: Promise<void> | null = null;
 let clientSettingsHydrationGeneration = 0;
@@ -155,7 +163,7 @@ async function hydrateClientSettings(): Promise<void> {
         return;
       }
       if (persistedSettings) {
-        replaceClientSettingsSnapshot({ ...DEFAULT_CLIENT_SETTINGS, ...persistedSettings });
+        replaceClientSettingsSnapshot({ ...defaultClientSettings, ...persistedSettings });
       }
       unsubscribeOtherTabClientSettings ??= subscribeBrowserClientSettingsWrites(
         refreshClientSettingsFromOtherTab,
@@ -187,7 +195,7 @@ function refreshClientSettingsFromOtherTab(): void {
   void enqueueClientSettingsPersistence(async () => {
     const persistedSettings = await ensureLocalApi().persistence.getClientSettings();
     if (persistedSettings) {
-      replaceClientSettingsSnapshot({ ...DEFAULT_CLIENT_SETTINGS, ...persistedSettings });
+      replaceClientSettingsSnapshot({ ...defaultClientSettings, ...persistedSettings });
     }
   }).catch((error) => {
     console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} refresh failed`, {
@@ -318,7 +326,7 @@ export function useClientSettingsHydrationStatus(): ClientSettingsHydrationStatu
   );
 }
 
-const getDefaultClientSettings = () => DEFAULT_CLIENT_SETTINGS;
+export const getDefaultClientSettings = (): ClientSettings => defaultClientSettings;
 const selectWholeClientSettings = (settings: ClientSettings) => settings;
 
 /** Structurally equal selections retain their reference and skip rendering. */
@@ -814,7 +822,7 @@ export function updateClientSettings(patch: ClientSettingsPatch): Promise<void> 
 
 export function __resetClientSettingsPersistenceForTests(): void {
   clientSettingsHydrationGeneration += 1;
-  clientSettingsSnapshot = DEFAULT_CLIENT_SETTINGS;
+  clientSettingsSnapshot = defaultClientSettings;
   clientSettingsHydrationStatus = "pending";
   clientSettingsHydrationPromise = null;
   clientSettingsPersistenceQueue = Promise.resolve();

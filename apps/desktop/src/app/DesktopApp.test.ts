@@ -1,4 +1,5 @@
 import { assert, it } from "@effect/vitest";
+import { DEFAULT_CLIENT_SETTINGS, type ClientSettings } from "@t3tools/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Deferred from "effect/Deferred";
@@ -15,6 +16,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import { vi } from "vite-plus/test";
+import { msg } from "gt-i18n";
 
 vi.mock("electron", () => ({}));
 vi.mock("@clerk/electron", () => ({ createClerkBridge: vi.fn() }));
@@ -73,6 +75,7 @@ import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as MacPermissions from "../permissions/MacPermissions.ts";
 import * as LoopbackTunnel from "../preview/LoopbackTunnel.ts";
+import { applyLanguage, m } from "../i18n/messages.ts";
 import * as PreviewManager from "../preview/Manager.ts";
 
 interface StubbedDesktop {
@@ -86,6 +89,8 @@ interface StubbedDesktop {
   readonly flushRendererHistory?: Effect.Effect<void>;
   readonly tokenRequested?: Deferred.Deferred<void>;
   readonly activationStarted?: Deferred.Deferred<void>;
+  readonly language?: ClientSettings["language"];
+  readonly systemLanguages?: ReadonlyArray<string>;
 }
 
 const runStubbedDesktop = (stub: StubbedDesktop) =>
@@ -101,6 +106,7 @@ const runStubbedDesktop = (stub: StubbedDesktop) =>
         Effect.provideService(ElectronApp.ElectronApp, {
           setPath: () => Effect.void,
           whenReady: stub.record("ready"),
+          preferredSystemLanguages: Effect.succeed(stub.systemLanguages ?? ["en-US"]),
         } as unknown as ElectronApp.ElectronApp["Service"]),
         Effect.provideService(ElectronDialog.ElectronDialog, {
           showErrorBox: () => Effect.die("unexpected fatal startup error"),
@@ -206,7 +212,11 @@ const runStubbedDesktop = (stub: StubbedDesktop) =>
           Layer.mock(ChildProcessSpawner.ChildProcessSpawner, {}),
           Layer.mock(DesktopBackendConfiguration.DesktopBackendConfiguration, {}),
           Layer.mock(DesktopCliCommand.DesktopCliCommand, {}),
-          Layer.mock(DesktopClientSettings.DesktopClientSettings, {}),
+          Layer.mock(DesktopClientSettings.DesktopClientSettings, {
+            get: stub.language
+              ? Effect.succeedSome({ ...DEFAULT_CLIENT_SETTINGS, language: stub.language })
+              : Effect.succeedNone,
+          }),
           Layer.mock(DesktopConnectionCatalogStore.DesktopConnectionCatalogStore, {}),
           Layer.mock(DesktopIpc.DesktopIpc, {}),
           Layer.mock(DesktopLocalEnvironmentAuth.DesktopLocalEnvironmentAuth, {
@@ -326,6 +336,47 @@ it.effect.each([false, true])(
       assert.isTrue(yield* shutdown.isComplete);
       assert.isTrue(yield* Deferred.isDone(registrationStopped));
     }).pipe(Effect.provide(DesktopShutdown.layer)),
+);
+
+it.effect.each([
+  { language: "zh", systemLanguages: ["en-US"] },
+  { language: undefined, systemLanguages: ["zh-Hans-CN", "en-US"] },
+] as const)("localizes startup before the backend starts (%j)", ({ language, systemLanguages }) =>
+  Effect.gen(function* () {
+    const startupMessage = yield* Deferred.make<string>();
+    const windowStarted = yield* Deferred.make<void>();
+    const app = yield* runStubbedDesktop({
+      localEnvironmentEnabled: true,
+      environment: { platform: "darwin" },
+      fileSystem: FileSystem.layerNoop({}),
+      ...(language ? { language } : {}),
+      systemLanguages,
+      record: (event) =>
+        event === "backend"
+          ? Effect.sync(() => m(msg("T3 Code failed to start"))).pipe(
+              Effect.flatMap((text) => Deferred.succeed(startupMessage, text)),
+              Effect.asVoid,
+            )
+          : Effect.void,
+      windowStarted,
+      registerLinuxUrlHandler: Effect.void,
+    });
+    assert.equal(yield* Deferred.await(startupMessage), "T3 Code 启动失败");
+    yield* Deferred.await(windowStarted);
+    yield* (yield* DesktopShutdown.DesktopShutdown).request;
+    yield* Fiber.join(app);
+  }).pipe(
+    Effect.ensuring(
+      applyLanguage("en").pipe(
+        Effect.provide(
+          Layer.mock(ElectronApp.ElectronApp, {
+            preferredSystemLanguages: Effect.succeed(["en-US"]),
+          }),
+        ),
+      ),
+    ),
+    Effect.provide(DesktopShutdown.layer),
+  ),
 );
 
 it.effect(

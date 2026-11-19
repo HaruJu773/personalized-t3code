@@ -1,5 +1,9 @@
 export const SYSTEM_LANGUAGE = "system";
 
+export function defaultUiLanguage(desktopPlatform: string | undefined): "en" | "system" {
+  return desktopPlatform === "darwin" ? SYSTEM_LANGUAGE : "en";
+}
+
 // Shown in their own language so a user can find theirs from any UI language.
 const NATIVE_LANGUAGE_NAMES: Readonly<Record<string, string>> = {
   en: "English",

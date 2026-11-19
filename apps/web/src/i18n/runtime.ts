@@ -52,11 +52,10 @@ function activateLocale(locale: string): void {
   for (const listener of listeners) listener();
 }
 
-function applyLanguageSetting(): void {
-  // Not desktopBridge.getSystemLocale(): that is the regional/time locale, not the UI language.
+function applyLanguageSetting(systemLanguages: ReadonlyArray<string>): void {
   requestedLocale = resolveLocale(
     getClientSettings().language,
-    navigator.languages,
+    systemLanguages,
     SUPPORTED_LOCALES,
     DEFAULT_LOCALE,
   );
@@ -70,8 +69,11 @@ export function persistGTLocale(locale: string): void {
 
 export function startI18n(): void {
   initializeI18n(persistGTLocale);
-  subscribeClientSettings(applyLanguageSetting);
-  applyLanguageSetting();
+  const desktopLanguages = window.desktopBridge?.getPreferredSystemLanguages?.() ?? [];
+  const systemLanguages = desktopLanguages.length > 0 ? desktopLanguages : navigator.languages;
+  const applyLanguage = () => applyLanguageSetting(systemLanguages);
+  subscribeClientSettings(applyLanguage);
+  applyLanguage();
 }
 
 /** Resolves once the requested locale's translations are ready; immediate for English. */

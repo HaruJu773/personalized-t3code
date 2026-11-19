@@ -118,6 +118,7 @@ import {
 import { useSearchableSetting } from "./settingsSearch";
 import { nativeLanguageName, SYSTEM_LANGUAGE } from "@t3tools/client-runtime/locales";
 import { SUPPORTED_LOCALES } from "../../i18n/locales";
+import { getDefaultClientSettings } from "../../hooks/useSettings";
 import { BackgroundActivitySettingsRow } from "./BackgroundActivitySettings";
 import { AdvancedSettings } from "./AdvancedSettings";
 import { PullRequestLinksOpenInAppSetting } from "./IntegrationsSettings";
@@ -466,6 +467,7 @@ function AboutVersionSection() {
 }
 
 export function useSettingsRestore(onRestored?: () => void) {
+  const defaultLanguage = getDefaultClientSettings().language;
   const messages = useMessages();
   const gt = useGT();
   const {
@@ -513,7 +515,7 @@ export function useSettingsRestore(onRestored?: () => void) {
     DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode
       ? [gt("Environment identification")]
       : []),
-    ...(settings.language !== DEFAULT_UNIFIED_SETTINGS.language ? [gt("Language")] : []),
+    ...(settings.language !== defaultLanguage ? [gt("Language")] : []),
     ...(settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat
       ? [gt("Time format")]
       : []),
@@ -696,7 +698,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth,
       effortDisplay: DEFAULT_UNIFIED_SETTINGS.effortDisplay,
       mathRenderingEnabled: DEFAULT_UNIFIED_SETTINGS.mathRenderingEnabled,
-      language: DEFAULT_UNIFIED_SETTINGS.language,
+      language: defaultLanguage,
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       notificationMode: DEFAULT_UNIFIED_SETTINGS.notificationMode,
       inAppNotificationsEnabled: DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled,
@@ -824,6 +826,7 @@ function AutoSettleDaysInput({
 }
 
 export function GeneralSettingsPanel() {
+  const defaultLanguage = getDefaultClientSettings().language;
   const gt = useGT();
   const m = useMessages();
   const setting = useSearchableSetting();
@@ -1120,12 +1123,12 @@ export function GeneralSettingsPanel() {
           {...setting("language")}
           description={<T>System default follows your browser or OS language.</T>}
           resetAction={
-            settings.language !== DEFAULT_UNIFIED_SETTINGS.language ? (
+            settings.language !== defaultLanguage ? (
               <SettingResetButton
                 ariaLabel={gt("Reset language to default")}
                 onClick={() =>
                   updateSettings({
-                    language: DEFAULT_UNIFIED_SETTINGS.language,
+                    language: defaultLanguage,
                   })
                 }
               />

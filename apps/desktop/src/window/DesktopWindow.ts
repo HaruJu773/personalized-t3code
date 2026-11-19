@@ -717,10 +717,14 @@ export const make = Effect.gen(function* () {
         }
 
         menuTemplate.push(
-          { role: "cut", enabled: params.editFlags.canCut },
-          { role: "copy", enabled: params.editFlags.canCopy },
-          { role: "paste", enabled: params.editFlags.canPaste },
-          { role: "selectAll", enabled: params.editFlags.canSelectAll },
+          { role: "cut", label: m(msg("Cut")), enabled: params.editFlags.canCut },
+          { role: "copy", label: m(msg("Copy")), enabled: params.editFlags.canCopy },
+          { role: "paste", label: m(msg("Paste")), enabled: params.editFlags.canPaste },
+          {
+            role: "selectAll",
+            label: m(msg("Select All")),
+            enabled: params.editFlags.canSelectAll,
+          },
         );
 
         void runPromise(

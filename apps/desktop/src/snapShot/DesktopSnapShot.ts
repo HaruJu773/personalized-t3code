@@ -93,6 +93,8 @@ import {
 } from "./snapShot.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { readImageDimensions } from "@t3tools/shared/imageDimensions";
+import { msg } from "gt-i18n";
+import { m } from "../i18n/messages.ts";
 
 const isCaptureSetupRequiredError = Schema.is(CaptureSetupRequiredError);
 
@@ -106,13 +108,16 @@ const FLASH_STATIC_DURATION_MS = 60;
 const FLASH_FRAME_INTERVAL_MS = 16;
 const FLASH_PEAK_OPACITY = 0.08;
 const MAC_SCREEN_CAPTURE_SETTINGS_URL = MAC_PERMISSION_SETTINGS_URLS["screen-recording"];
-const MAC_SCREEN_CAPTURE_PERMISSION_MESSAGE =
-  "Allow Screen Recording in System Settings, then restart T3 Code.";
-const MAC_ACCESSIBILITY_PERMISSION_MESSAGE =
-  "Allow Accessibility in System Settings, then restart T3 Code.";
-const MAC_BOTH_PERMISSIONS_MESSAGE =
-  "Allow Accessibility and Screen Recording in System Settings, then restart T3 Code.";
-const MAC_PERMISSION_MESSAGES = new Set([
+const MAC_SCREEN_CAPTURE_PERMISSION_MESSAGE = msg(
+  "Allow Screen Recording in System Settings, then restart T3 Code.",
+);
+const MAC_ACCESSIBILITY_PERMISSION_MESSAGE = msg(
+  "Allow Accessibility in System Settings, then restart T3 Code.",
+);
+const MAC_BOTH_PERMISSIONS_MESSAGE = msg(
+  "Allow Accessibility and Screen Recording in System Settings, then restart T3 Code.",
+);
+const MAC_PERMISSION_MESSAGES = new Set<string>([
   MAC_SCREEN_CAPTURE_PERMISSION_MESSAGE,
   MAC_ACCESSIBILITY_PERMISSION_MESSAGE,
   MAC_BOTH_PERMISSIONS_MESSAGE,
@@ -730,14 +735,19 @@ function observedPairMessage(
 ): string {
   const modifier = snapShotShortcutModifierPair(shortcut);
   const label = snapShotModifierPairLabel(modifier, platform === "darwin");
-  const base = `${label} is observed and cannot be reserved exclusively.`;
   if (modifier === "meta" && platform !== "darwin") {
-    return `${base} This key can also open the system's own menu.`;
+    return msg(
+      "{shortcut} is observed and cannot be reserved exclusively. This key can also open the system's own menu.",
+      { shortcut: label },
+    );
   }
   if (modifier === "alt" && platform === "win32") {
-    return `${base} This key can also activate app menu bars.`;
+    return msg(
+      "{shortcut} is observed and cannot be reserved exclusively. This key can also activate app menu bars.",
+      { shortcut: label },
+    );
   }
-  return base;
+  return msg("{shortcut} is observed and cannot be reserved exclusively.", { shortcut: label });
 }
 
 function probeGlobalShortcut(accelerator: string): DesktopSnapShotShortcutAvailability {
@@ -745,13 +755,13 @@ function probeGlobalShortcut(accelerator: string): DesktopSnapShotShortcutAvaila
     if (!Electron.globalShortcut.register(accelerator, () => undefined)) {
       return {
         available: false,
-        message: "This shortcut is already used by the system or another app.",
+        message: m(msg("This shortcut is already used by the system or another app.")),
       };
     }
     Electron.globalShortcut.unregister(accelerator);
     return { available: true, message: null };
   } catch {
-    return { available: false, message: "The system could not register this shortcut." };
+    return { available: false, message: m(msg("The system could not register this shortcut.")) };
   }
 }
 
@@ -1095,9 +1105,11 @@ export const make = Effect.gen(function* () {
       );
       return {
         available,
-        message: available
-          ? observedPairMessage(shortcut, environment.platform)
-          : snapShotShortcutRegistrationFailureMessage(shortcut, environment.platform),
+        message: m(
+          available
+            ? observedPairMessage(shortcut, environment.platform)
+            : snapShotShortcutRegistrationFailureMessage(shortcut, environment.platform),
+        ),
       };
     }
     const systemConflict = snapShotShortcutSystemConflict(shortcut);
@@ -1648,10 +1660,21 @@ export const make = Effect.gen(function* () {
                         .withPermits(1)(applySettings(settings, null, true))
                         .pipe(Effect.andThen(Ref.get(stateRef)))
                     : state;
-                return { ...recovered, macPermissions, ...(message ? { message } : {}) };
+                return {
+                  ...recovered,
+                  macPermissions,
+                  message: message ? m(message) : recovered.message,
+                  shortcutMessage: recovered.shortcutMessage ? m(recovered.shortcutMessage) : null,
+                };
               })
             : Effect.succeed(
-                environment.platform === "win32" ? { ...state, windows: true } : state,
+                environment.platform === "win32"
+                  ? {
+                      ...state,
+                      windows: true,
+                      shortcutMessage: state.shortcutMessage ? m(state.shortcutMessage) : null,
+                    }
+                  : state,
               ),
       ),
       Effect.flatMap((state) =>

@@ -71,6 +71,7 @@ import {
   selectPairingEndpoint,
   isTailscaleHttpsEndpoint,
   endpointDefaultPreferenceKey,
+  endpointDisplayLabel,
   resolveAdvertisedEndpointPairingUrl,
   resolveCurrentOriginPairingUrl,
   isHostedAppPairingUrl,
@@ -197,7 +198,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
       options.push({
         id: endpoint.id,
         preferenceKey: endpointDefaultPreferenceKey(endpoint),
-        label: endpoint.label,
+        label: endpointDisplayLabel(endpoint, m),
         url,
         detail: endpointShareHint(endpoint, url, m),
         qrShareable: isQrShareableEndpoint(endpoint),
@@ -951,7 +952,7 @@ export const AdvertisedEndpointListRow = memo(function AdvertisedEndpointListRow
       <div className="flex min-h-7 min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
         <div className="flex min-h-7 min-w-0 flex-1 items-center gap-3">
           <h3 className="shrink-0 text-sm leading-5 font-medium text-foreground">
-            {endpoint.label}
+            {endpointDisplayLabel(endpoint, m)}
           </h3>
           {shouldShowEndpointUrl ? (
             <Tooltip>

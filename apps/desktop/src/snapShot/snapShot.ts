@@ -3,6 +3,7 @@
 
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
+import { msg } from "gt-i18n";
 
 import {
   SNAP_SHOT_ACCESSIBILITY_MAX_NODES,
@@ -15,6 +16,8 @@ import {
   type SnapShotModifier,
   type SnapShotShortcut,
 } from "@t3tools/contracts";
+
+import { m } from "../i18n/messages.ts";
 
 interface AccessibilityTreeNode {
   readonly name?: string;
@@ -39,27 +42,29 @@ export function snapShotShortcutRegistrationFailureMessage(
   platform: NodeJS.Platform,
 ): string {
   return isModifierPairShortcut(shortcut)
-    ? `${snapShotModifierPairLabel(
-        snapShotShortcutModifierPair(shortcut),
-        platform === "darwin",
-      )} is not available on this system.`
-    : "This shortcut is already used by the system or another app.";
+    ? msg("{shortcut} is not available on this system.", {
+        shortcut: snapShotModifierPairLabel(
+          snapShotShortcutModifierPair(shortcut),
+          platform === "darwin",
+        ),
+      })
+    : msg("This shortcut is already used by the system or another app.");
 }
 
 const COMMON_MOD_ACTIONS: Readonly<Record<string, string>> = {
-  a: "Select All",
-  c: "Copy",
-  f: "Find",
-  n: "New",
-  o: "Open",
-  p: "Print",
-  q: "Quit",
-  s: "Save",
-  t: "New Tab",
-  v: "Paste",
-  w: "Close Window",
-  x: "Cut",
-  z: "Undo",
+  a: msg("Select All"),
+  c: msg("Copy"),
+  f: msg("Find"),
+  n: msg("New"),
+  o: msg("Open"),
+  p: msg("Print"),
+  q: msg("Quit"),
+  s: msg("Save"),
+  t: msg("New Tab"),
+  v: msg("Paste"),
+  w: msg("Close Window"),
+  x: msg("Cut"),
+  z: msg("Undo"),
 };
 
 export function snapShotShortcutSystemConflict(shortcut: SnapShotKeyChord): string | null {
@@ -72,19 +77,21 @@ export function snapShotShortcutSystemConflict(shortcut: SnapShotKeyChord): stri
   ].filter(Boolean).length;
   if (modifierCount !== 1) return null;
   if (shortcut.shiftKey) {
-    return "Shift combinations are used for typing and text selection. Add another modifier.";
+    return m(
+      msg("Shift combinations are used for typing and text selection. Add another modifier."),
+    );
   }
   const key = shortcut.key.toLowerCase();
   if (shortcut.modKey) {
     const action = COMMON_MOD_ACTIONS[key];
-    return action ? `This shortcut is ${action} in most apps.` : null;
+    return action ? m(msg("This shortcut is {action} in most apps."), { action: m(action) }) : null;
   }
   if (shortcut.ctrlKey && ["c", "d", "z"].includes(key)) {
-    return "This shortcut controls running commands in terminals.";
+    return m(msg("This shortcut controls running commands in terminals."));
   }
-  if (shortcut.altKey && key === "tab") return "The system uses Alt+Tab to switch apps.";
+  if (shortcut.altKey && key === "tab") return m(msg("The system uses Alt+Tab to switch apps."));
   if (shortcut.metaKey && ["l", " "].includes(key)) {
-    return "The system already uses this shortcut.";
+    return m(msg("The system already uses this shortcut."));
   }
   return null;
 }

@@ -414,6 +414,21 @@ export function isTailscaleHttpsEndpoint(endpoint: AdvertisedEndpoint): boolean 
   return endpoint.id.startsWith("tailscale-magicdns:");
 }
 
+export function endpointDisplayLabel(
+  endpoint: AdvertisedEndpoint,
+  resolve: MessageResolver,
+): string {
+  if (endpoint.source === "desktop-core") {
+    if (endpoint.reachability === "loopback") return resolve(msg("This machine"));
+    if (endpoint.reachability === "lan") return resolve(msg("Local network"));
+  }
+  if (endpoint.source === "user" && endpoint.provider.id === "manual") {
+    if (endpoint.label === "Custom HTTPS") return resolve(msg("Custom HTTPS"));
+    if (endpoint.label === "Custom endpoint") return resolve(msg("Custom endpoint"));
+  }
+  return endpoint.label;
+}
+
 export function endpointDefaultPreferenceKey(endpoint: AdvertisedEndpoint): string {
   if (endpoint.id.startsWith("desktop-loopback:")) {
     return "desktop-core:loopback:http";

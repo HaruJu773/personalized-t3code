@@ -8,12 +8,10 @@ import * as Electron from "electron";
 import { msg } from "gt-i18n";
 
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
-import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
-import { applyLanguage, m, onLocaleChange } from "../i18n/messages.ts";
-import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
+import { m, onLocaleChange } from "../i18n/messages.ts";
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 
@@ -168,8 +166,6 @@ const handleCheckForUpdatesMenuClick = Effect.gen(function* () {
 export const make = Effect.gen(function* () {
   const electronMenu = yield* ElectronMenu.ElectronMenu;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
-  const electronApp = yield* ElectronApp.ElectronApp;
-  const clientSettings = yield* Effect.serviceOption(DesktopClientSettings.DesktopClientSettings);
   const context = yield* Effect.context<DesktopApplicationMenuRuntimeServices>();
   const runPromise = Effect.runPromiseWith(context);
   const runFork = Effect.runForkWith(context);
@@ -230,11 +226,11 @@ export const make = Effect.gen(function* () {
             click: settingsClick,
           },
           { type: "separator" },
-          { role: "services" },
+          { role: "services", label: m(msg("Services")) },
           { type: "separator" },
           { role: "hide", label: m(msg("Hide {appName}"), { appName: environment.displayName }) },
-          { role: "hideOthers" },
-          { role: "unhide" },
+          { role: "hideOthers", label: m(msg("Hide Others")) },
+          { role: "unhide", label: m(msg("Show All")) },
           { type: "separator" },
           { role: "quit", label: m(msg("Quit {appName}"), { appName: environment.displayName }) },
         ],
@@ -275,26 +271,29 @@ export const make = Effect.gen(function* () {
       {
         label: m(msg("Edit", { $context: "menu bar title" })),
         submenu: [
-          { role: "undo" },
-          { role: "redo" },
+          { role: "undo", label: m(msg("Undo")) },
+          { role: "redo", label: m(msg("Redo")) },
           { type: "separator" },
-          { role: "cut" },
-          { role: "copy" },
-          { role: "paste" },
+          { role: "cut", label: m(msg("Cut")) },
+          { role: "copy", label: m(msg("Copy")) },
+          { role: "paste", label: m(msg("Paste")) },
           {
             label: m(msg("Paste as Text")),
             accelerator: "CmdOrCtrl+Shift+V",
             click: pasteAsTextClick,
           },
-          { role: "delete" },
+          { role: "delete", label: m(msg("Delete")) },
           { type: "separator" },
-          { role: "selectAll" },
+          { role: "selectAll", label: m(msg("Select All")) },
           ...(environment.platform === "darwin"
             ? [
                 { type: "separator" as const },
                 {
                   label: m(msg("Speech", { $context: "menu, text-to-speech" })),
-                  submenu: [{ role: "startSpeaking" as const }, { role: "stopSpeaking" as const }],
+                  submenu: [
+                    { role: "startSpeaking" as const, label: m(msg("Start Speaking")) },
+                    { role: "stopSpeaking" as const, label: m(msg("Stop Speaking")) },
+                  ],
                 },
               ]
             : []),
@@ -359,22 +358,27 @@ export const make = Effect.gen(function* () {
             click: zoomClick("out"),
           },
           { type: "separator" },
-          { role: "togglefullscreen" },
+          { role: "togglefullscreen", label: m(msg("Toggle Full Screen")) },
         ],
       },
       {
         // Electron's default Window submenu adds a Ctrl+W close role off macOS.
         role: "windowMenu",
+        label: m(msg("Window", { $context: "menu bar title" })),
         submenu: [
-          { role: "minimize" },
-          { role: "zoom" },
+          { role: "minimize", label: m(msg("Minimize")) },
+          { role: "zoom", label: m(msg("Zoom")) },
           ...(environment.platform === "darwin"
-            ? [{ type: "separator" as const }, { role: "front" as const }]
+            ? [
+                { type: "separator" as const },
+                { role: "front" as const, label: m(msg("Bring All to Front")) },
+              ]
             : []),
         ],
       },
       {
         role: "help",
+        label: m(msg("Help", { $context: "menu bar title" })),
         submenu: [
           {
             label: m(msg("Check for Updates...")),
@@ -387,21 +391,9 @@ export const make = Effect.gen(function* () {
     yield* electronMenu.setApplicationMenu(template);
   }).pipe(Effect.withSpan("desktop.menu.configure"));
 
-  // Load the saved language before the first build so the menu never starts in English.
-  const applySavedLanguage = Effect.gen(function* () {
-    if (Option.isNone(clientSettings)) return;
-    const saved = yield* clientSettings.value.get.pipe(Effect.orElseSucceed(() => Option.none()));
-    if (Option.isSome(saved)) {
-      yield* applyLanguage(saved.value.language).pipe(
-        Effect.provideService(ElectronApp.ElectronApp, electronApp),
-      );
-    }
-  });
-
   let rebuildsOnLocaleChange = false;
   return DesktopApplicationMenu.of({
-    configure: applySavedLanguage.pipe(
-      Effect.andThen(configure),
+    configure: configure.pipe(
       Effect.tap(() =>
         Effect.sync(() => {
           if (rebuildsOnLocaleChange) return;

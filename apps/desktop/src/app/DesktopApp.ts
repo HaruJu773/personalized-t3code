@@ -6,6 +6,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
 import * as NetService from "@t3tools/shared/Net";
+import { defaultUiLanguage } from "@t3tools/client-runtime/locales";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
@@ -33,6 +34,7 @@ import * as DesktopPreReadyPlatform from "./DesktopPreReadyPlatform.ts";
 import * as DesktopShutdown from "./DesktopShutdown.ts";
 import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
+import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
 import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
 import * as DesktopStartupRecovery from "./DesktopStartupRecovery.ts";
 import * as DesktopState from "./DesktopState.ts";
@@ -43,7 +45,7 @@ import * as DesktopWslBackend from "../wsl/DesktopWslBackend.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { msg } from "gt-i18n";
-import { m } from "../i18n/messages.ts";
+import { applyLanguage, m } from "../i18n/messages.ts";
 
 const DEFAULT_DESKTOP_BACKEND_PORT = 3773;
 const MAX_TCP_PORT = 65_535;
@@ -150,7 +152,7 @@ const handleFatalStartupError = Effect.fn("desktop.startup.handleFatalStartupErr
   if (!wasQuitting) {
     yield* electronDialog.showErrorBox(
       m(msg("T3 Code failed to start")),
-      `Stage: ${stage}\n${message}${detail}`,
+      `${m(msg("Stage: {stage}"), { stage })}\n${message}${detail}`,
     );
   }
   yield* shutdown.request;
@@ -392,6 +394,14 @@ const startup = Effect.gen(function* () {
   yield* electronApp.whenReady.pipe(
     Effect.withSpan("desktop.electron.whenReady"),
     Effect.catchCause((cause) => fatalStartupCause("whenReady", cause)),
+  );
+  const savedClientSettings = yield* (yield* DesktopClientSettings.DesktopClientSettings).get.pipe(
+    Effect.orElseSucceed(() => Option.none()),
+  );
+  yield* applyLanguage(
+    Option.map(savedClientSettings, (settings) => settings.language).pipe(
+      Option.getOrElse(() => defaultUiLanguage(environment.platform)),
+    ),
   );
   yield* logStartupInfo("app ready");
   if (environment.platform === "linux") {

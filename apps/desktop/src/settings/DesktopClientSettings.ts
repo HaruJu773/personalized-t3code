@@ -1,3 +1,4 @@
+import { defaultUiLanguage } from "@t3tools/client-runtime/locales";
 import { ClientSettingsSchema, type ClientSettings } from "@t3tools/contracts";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
 import { resolveSymlinkTarget } from "@t3tools/shared/symlink";
@@ -14,15 +15,18 @@ import * as Ref from "effect/Ref";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 
 const ClientSettingsJson = fromLenientJson(ClientSettingsSchema);
-const decodeClientSettingsDocument = Schema.decodeEffect(
-  fromLenientJson(Schema.Record(Schema.String, Schema.Unknown)),
-);
+const ClientSettingsDocument = Schema.Record(Schema.String, Schema.Unknown);
+const isClientSettingsDocument = Schema.is(ClientSettingsDocument);
+const decodeClientSettingsDocument = Schema.decodeEffect(fromLenientJson(ClientSettingsDocument));
 const decodeClientSettingsValue = Schema.decodeUnknownEffect(ClientSettingsSchema);
-const decodeClientSettingsJson = Effect.fnUntraced(function* (raw: string) {
+const decodeClientSettingsJson = Effect.fnUntraced(function* (raw: string, language: string) {
   const document = yield* decodeClientSettingsDocument(raw);
   // Select the shape before validation so invalid legacy settings cannot become defaults.
+  const settings = Object.hasOwn(document, "settings") ? document.settings : document;
   return yield* decodeClientSettingsValue(
-    Object.hasOwn(document, "settings") ? document.settings : document,
+    isClientSettingsDocument(settings) && !Object.hasOwn(settings, "language")
+      ? { ...settings, language }
+      : settings,
   );
 });
 const encodeClientSettingsJson = Schema.encodeEffect(ClientSettingsJson);
@@ -75,6 +79,7 @@ export class DesktopClientSettings extends Context.Service<
 const readClientSettings = (
   fileSystem: FileSystem.FileSystem,
   settingsPath: string,
+  defaultLanguage: string,
 ): Effect.Effect<Option.Option<ClientSettings>, DesktopClientSettingsReadError> =>
   fileSystem.readFileString(settingsPath).pipe(
     Effect.asSome,
@@ -99,7 +104,7 @@ const readClientSettings = (
       Option.match({
         onNone: () => Effect.succeed(Option.none<ClientSettings>()),
         onSome: (raw) =>
-          decodeClientSettingsJson(raw).pipe(
+          decodeClientSettingsJson(raw, defaultLanguage).pipe(
             Effect.asSome,
             Effect.catchTags({
               SchemaError: (cause) =>
@@ -193,9 +198,11 @@ export const make = Effect.gen(function* () {
   const random = yield* SecureRandom.SecureRandom;
 
   return DesktopClientSettings.of({
-    get: readClientSettings(fileSystem, environment.clientSettingsPath).pipe(
-      Effect.withSpan("desktop.clientSettings.get"),
-    ),
+    get: readClientSettings(
+      fileSystem,
+      environment.clientSettingsPath,
+      defaultUiLanguage(environment.platform),
+    ).pipe(Effect.withSpan("desktop.clientSettings.get")),
     set: Effect.fn("desktop.clientSettings.set")(function (settings) {
       return random.uuidV4().pipe(
         Effect.map((uuid) => uuid.replace(/-/g, "")),

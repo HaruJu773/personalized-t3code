@@ -234,6 +234,7 @@ describe("DesktopClientSettings", () => {
         assert.isTrue(Option.isSome(persisted));
         if (Option.isSome(persisted)) {
           assert.equal(persisted.value.timestampFormat, "24-hour");
+          assert.equal(persisted.value.language, "system");
         }
       }),
     ),
@@ -250,7 +251,8 @@ describe("DesktopClientSettings", () => {
           environment.clientSettingsPath,
           `{
             "settings": {
-              "timestampFormat": "12-hour"
+              "timestampFormat": "12-hour",
+              "language": "en"
             }
           }\n`,
         );
@@ -259,6 +261,7 @@ describe("DesktopClientSettings", () => {
         assert.isTrue(Option.isSome(persisted));
         if (Option.isSome(persisted)) {
           assert.equal(persisted.value.timestampFormat, "12-hour");
+          assert.equal(persisted.value.language, "en");
         }
       }),
     ),
