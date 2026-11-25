@@ -963,6 +963,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("telemetry analytics usage data tracking legal opt out")],
   },
   {
+    id: "share-product-usage-data",
+    title: msg("Share product usage data"),
+    to: "/settings/diagnostics",
+    targetId: "share-product-usage-data",
+    scope: "environment",
+    searchTerms: [msg("analytics telemetry privacy opt out")],
+  },
+  {
     id: "telemetry-export",
     title: msg("OpenTelemetry export"),
     to: "/settings/diagnostics",

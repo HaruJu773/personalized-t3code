@@ -367,6 +367,8 @@ export const OtlpEndpointSource = Schema.Literals(["environment", "bootstrap", "
 export type OtlpEndpointSource = typeof OtlpEndpointSource.Type;
 
 export const ServerObservability = Schema.Struct({
+  productTelemetrySupported: Schema.optionalKey(Schema.Boolean),
+  productTelemetryDisabledByEnvironment: Schema.optionalKey(Schema.Boolean),
   logsDirectoryPath: TrimmedNonEmptyString,
   localTracingEnabled: Schema.Boolean,
   otlpTracesUrl: Schema.optional(TrimmedNonEmptyString),

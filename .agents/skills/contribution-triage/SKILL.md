@@ -192,14 +192,12 @@ retry blindly or claim success for an unverified action.
 Report the PR and assessed head, policy revision, eligibility outcome, supporting evidence and guide
 links, and actions actually completed or still pending. In a dry run, mark all comments and actions as
 unexecuted drafts. Event wiring, scheduling, and retry infrastructure belong to the enforcement rollout.
-The current native GitHub rollout may use partial event coverage: `opened` (including drafts),
-`ready_for_review`, and `closed`, optionally `synchronize`, new human PR conversation or inline comments,
-and submitted reviews. Do not wait for `ready_for_review` to triage an opened draft. PR edits, `reopened`,
-`converted_to_draft`, and edits, deletions, or dismissals of existing evidence are unavailable and
-intentionally not wired. Do not add a periodic triage sweep or claim full event coverage.
+Before relying on automated triage, inspect the current workflow triggers and retry behavior. Treat an
+event as a wake-up to fetch the current full PR state and evidence, then assess cumulative changes while
+the PR is open. Do not infer event coverage from this skill or claim that unsupported changes are
+automatically assessed.
 
-Treat each supported event as a wake-up: fetch the current full PR state and evidence, then assess
-cumulative changes while it is open, including changes that had no supported event of their own.
 For a currently closed or merged PR, record that state without reopening, closing again, or handing it
-off for review. Unsupported changes alone may remain unassessed until another supported event or an
-explicitly authorized assessment; the contribution standards still apply regardless of draft status.
+off for review. If a required update has no automated trigger, leave it pending until another supported
+event or an explicitly authorized assessment. The contribution standards still apply regardless of
+draft status.

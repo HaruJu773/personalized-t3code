@@ -22,6 +22,7 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import { getTelemetryIdentity, type TelemetryOwner } from "./Identify.ts";
 
 interface BufferedAnalyticsEvent {
@@ -121,13 +122,16 @@ function serverOsFromNodePlatform(platform: string): ClientOs {
 export const make = Effect.gen(function* () {
   const telemetryConfig = yield* TelemetryEnvConfig;
   const hostEnvironment = yield* HostProcess.Environment;
+  const serverSettings = yield* ServerSettings.ServerSettingsService;
+  let savedEnabled = false;
+  let generation = 0;
   const awaitingShellConsent = hostEnvironment.T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING === "1";
   // A managed policy can switch analytics off over the environment, never on.
   const policyAllows =
     ManagedPolicy.deniedBy(yield* ManagedPolicy.ManagedPolicy, "telemetry") === undefined;
   // A cached PATH does not establish consent from the current login shell.
   const telemetryEnabled = Effect.suspend(() => {
-    if (!telemetryConfig.enabled || !policyAllows) return Effect.succeed(false);
+    if (!telemetryConfig.enabled || !policyAllows || !savedEnabled) return Effect.succeed(false);
     if (!awaitingShellConsent) return Effect.succeed(true);
     if (hostEnvironment.T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING === "1")
       return Effect.succeed(false);
@@ -158,6 +162,32 @@ export const make = Effect.gen(function* () {
   const recordedOwnersRef = yield* Ref.make<
     Readonly<Record<"server" | "client", ReadonlySet<string>>>
   >({ server: new Set(), client: new Set() });
+  const clearDelivery: DeliveryState = {
+    failedBatch: [],
+    batchAttempts: 0,
+    firstFailedAt: 0,
+    failures: 0,
+    retryAt: 0,
+  };
+  const onTelemetryChange = Effect.fn("AnalyticsService.onTelemetryChange")(function* (
+    enabled: boolean,
+  ) {
+    if (savedEnabled === enabled) return;
+    savedEnabled = enabled;
+    generation++;
+    if (!enabled) {
+      yield* Ref.set(bufferRef, []);
+      yield* Ref.set(deliveryRef, clearDelivery);
+      yield* Ref.set(recordedOwnersRef, { server: new Set<string>(), client: new Set<string>() });
+    }
+  });
+  if (serverSettings.observeTelemetry) {
+    yield* serverSettings.observeTelemetry(onTelemetryChange).pipe(Effect.orDie);
+  } else {
+    yield* onTelemetryChange(
+      (yield* serverSettings.getSettings.pipe(Effect.orDie)).telemetryEnabled,
+    );
+  }
   // The background flush and the shutdown flush must not send the same batch at once.
   const flushLock = yield* Semaphore.make(1);
   const clientType = serverConfig.mode === "desktop" ? "desktop-app" : "cli-web-client";
@@ -167,10 +197,14 @@ export const make = Effect.gen(function* () {
   const enqueueBufferedEvent = (
     uuid: string,
     event: string,
+    eventGeneration: number,
     properties?: Readonly<Record<string, unknown>>,
   ) =>
     Effect.flatMap(DateTime.now, (now) =>
       Ref.modify(bufferRef, (current) => {
+        if (eventGeneration !== generation || !savedEnabled) {
+          return [{ size: current.length, dropped: false }, current] as const;
+        }
         const appended = [
           ...current,
           {
@@ -198,8 +232,9 @@ export const make = Effect.gen(function* () {
 
   const sendBatch = Effect.fn("AnalyticsService.sendBatch")(function* (
     events: ReadonlyArray<BufferedAnalyticsEvent>,
+    batchGeneration: number,
   ) {
-    if (!(yield* telemetryEnabled) || !distinctId) return;
+    if (!(yield* telemetryEnabled) || !distinctId || generation !== batchGeneration) return;
 
     const payload = {
       api_key: telemetryConfig.posthogKey,
@@ -229,35 +264,49 @@ export const make = Effect.gen(function* () {
 
     yield* HttpClientRequest.post(`${telemetryConfig.posthogHost}/batch/`).pipe(
       HttpClientRequest.bodyJson(payload),
-      Effect.flatMap(httpClient.execute),
-      Effect.flatMap(HttpClientResponse.filterStatusOk),
+      Effect.flatMap((request) =>
+        generation === batchGeneration
+          ? httpClient
+              .execute(request)
+              .pipe(Effect.flatMap(HttpClientResponse.filterStatusOk), Effect.asVoid)
+          : Effect.void,
+      ),
       Effect.timeout(SEND_TIMEOUT),
     );
   });
 
-  const takeBatch = Ref.modify(bufferRef, (current) => {
-    const nextBatch = current.slice(0, telemetryConfig.flushBatchSize);
-    return [nextBatch, current.slice(nextBatch.length)] as const;
-  });
+  const takeBatch = (batchGeneration: number) =>
+    Ref.modify(bufferRef, (current) => {
+      if (batchGeneration !== generation) return [current.slice(0, 0), current] as const;
+      const nextBatch = current.slice(0, telemetryConfig.flushBatchSize);
+      return [nextBatch, current.slice(nextBatch.length)] as const;
+    });
 
   // Back off even after dropping rejected batches so bad API keys cannot drain the queue in a tight loop.
   const flush: AnalyticsService["Service"]["flush"] = Effect.gen(function* () {
     while (true) {
+      const batchGeneration = generation;
       const delivery = yield* Ref.get(deliveryRef);
-      const batch = delivery.failedBatch.length > 0 ? delivery.failedBatch : yield* takeBatch;
+      const batch =
+        delivery.failedBatch.length > 0 ? delivery.failedBatch : yield* takeBatch(batchGeneration);
       if (batch.length === 0) {
         return;
       }
 
-      const sent = yield* Effect.result(sendBatch(batch));
+      const sent = yield* Effect.result(sendBatch(batch, batchGeneration));
+      if (batchGeneration !== generation) return;
       if (Result.isSuccess(sent)) {
-        yield* Ref.set(deliveryRef, {
-          failedBatch: [],
-          batchAttempts: 0,
-          firstFailedAt: 0,
-          failures: 0,
-          retryAt: 0,
-        });
+        yield* Ref.update(deliveryRef, (current) =>
+          generation !== batchGeneration
+            ? current
+            : {
+                failedBatch: [],
+                batchAttempts: 0,
+                firstFailedAt: 0,
+                failures: 0,
+                retryAt: 0,
+              },
+        );
         continue;
       }
 
@@ -266,32 +315,41 @@ export const make = Effect.gen(function* () {
       const batchAttempts = delivery.batchAttempts + 1;
       const firstFailedAt = delivery.batchAttempts === 0 ? now : delivery.firstFailedAt;
       const retryAt = now + retryDelayMs(failures, yield* Random.next);
+      if (batchGeneration !== generation) return;
       const error = sent.failure;
       const rejected =
         error._tag === "HttpClientError" &&
         error.reason._tag === "StatusCodeError" &&
         REJECTED_BATCH_STATUSES.has(error.reason.response.status);
       if (!rejected && now - firstFailedAt < MAX_BATCH_RETRY_MS) {
-        yield* Ref.set(deliveryRef, {
-          failedBatch: batch,
-          batchAttempts,
-          firstFailedAt,
-          failures,
-          retryAt,
-        });
+        yield* Ref.update(deliveryRef, (current) =>
+          generation !== batchGeneration
+            ? current
+            : {
+                failedBatch: batch,
+                batchAttempts,
+                firstFailedAt,
+                failures,
+                retryAt,
+              },
+        );
         yield* Effect.logDebug("Failed to send telemetry batch; will retry", {
           attempt: batchAttempts,
           cause: error,
         });
         return;
       }
-      yield* Ref.set(deliveryRef, {
-        failedBatch: [],
-        batchAttempts: 0,
-        firstFailedAt: 0,
-        failures,
-        retryAt,
-      });
+      yield* Ref.update(deliveryRef, (current) =>
+        generation !== batchGeneration
+          ? current
+          : {
+              failedBatch: [],
+              batchAttempts: 0,
+              firstFailedAt: 0,
+              failures,
+              retryAt,
+            },
+      );
       yield* Effect.logWarning(
         rejected
           ? "Dropped telemetry batch the endpoint rejected"
@@ -309,46 +367,61 @@ export const make = Effect.gen(function* () {
     }
   });
 
-  const record: AnalyticsService["Service"]["record"] = Effect.fn("AnalyticsService.record")(
-    function* (event, properties) {
-      if (!(yield* telemetryEnabled) || !distinctId) return;
+  const record = Effect.fn("AnalyticsService.record")(function* (
+    event: string,
+    properties?: Readonly<Record<string, unknown>>,
+    eventGeneration = generation,
+  ) {
+    if (!(yield* telemetryEnabled) || !distinctId) return;
 
-      // Catch Node UUID defects too; best-effort telemetry drops events without UUIDs.
-      const uuid = yield* Effect.exit(crypto.uuidV7());
-      if (Exit.isFailure(uuid)) return;
+    // Catch Node UUID defects too; best-effort telemetry drops events without UUIDs.
+    const uuid = yield* Effect.exit(crypto.uuidV7());
+    if (Exit.isFailure(uuid)) return;
 
-      const enqueueResult = yield* enqueueBufferedEvent(uuid.value, event, properties);
-      if (enqueueResult.dropped) {
-        yield* Effect.logDebug("analytics buffer full; dropping oldest event", {
-          size: enqueueResult.size,
-          event,
-        });
-      }
-    },
-  );
+    const enqueueResult = yield* enqueueBufferedEvent(
+      uuid.value,
+      event,
+      eventGeneration,
+      properties,
+    );
+    if (enqueueResult.dropped) {
+      yield* Effect.logDebug("analytics buffer full; dropping oldest event", {
+        size: enqueueResult.size,
+        event,
+      });
+    }
+  });
 
   const recordOwners: AnalyticsService["Service"]["recordOwners"] = Effect.fn(
     "AnalyticsService.recordOwners",
-  )((owners, observedBy) =>
-    Effect.forEach(
+  )(function* (owners, observedBy) {
+    const ownersGeneration = generation;
+    if (!(yield* telemetryEnabled)) return;
+    yield* Effect.forEach(
       owners,
       ({ source, ownerId }) =>
         Ref.modify(recordedOwnersRef, (recorded) => {
           const key = `${source}:${ownerId}`;
           const seen = recorded[observedBy];
-          return seen.has(key) || seen.size >= MAX_RECORDED_OWNERS
+          return generation !== ownersGeneration ||
+            seen.has(key) ||
+            seen.size >= MAX_RECORDED_OWNERS
             ? [false, recorded]
             : [true, { ...recorded, [observedBy]: new Set(seen).add(key) }];
         }).pipe(
           Effect.flatMap((isNew) =>
             isNew
-              ? record("install.owner_observed", { ownerSource: source, ownerId, observedBy })
+              ? record(
+                  "install.owner_observed",
+                  { ownerSource: source, ownerId, observedBy },
+                  ownersGeneration,
+                )
               : Effect.void,
           ),
         ),
       { discard: true },
-    ),
-  );
+    );
+  });
 
   yield* Effect.forever(Effect.sleep(FLUSH_INTERVAL_MS).pipe(Effect.andThen(flushWhenDue)), {
     disableYield: true,

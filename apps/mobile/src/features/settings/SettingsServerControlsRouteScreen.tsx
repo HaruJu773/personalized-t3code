@@ -524,6 +524,45 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
 
             {props.page === "maintenance" ? (
               <>
+                {!projectSelected &&
+                displayTargets.length === 1 &&
+                reference.environment.serverConfig.observability?.productTelemetrySupported ===
+                  true ? (
+                  <SettingsSection title={gt("Product usage data")}>
+                    <SettingsSwitchRow
+                      icon="chart.bar.xaxis"
+                      label={gt("Share product usage data")}
+                      subtitle={
+                        reference.environment.serverConfig.managedPolicy?.limits?.telemetry ===
+                        false
+                          ? gt("Disabled by {organization}.", {
+                              organization:
+                                reference.environment.serverConfig.managedPolicy.organization,
+                            })
+                          : reference.environment.serverConfig.observability
+                                .productTelemetryDisabledByEnvironment === true
+                            ? gt("Disabled by T3CODE_TELEMETRY_ENABLED on this environment.")
+                            : gt("Share product usage events from this environment.")
+                      }
+                      value={
+                        reference.environment.serverConfig.managedPolicy?.limits?.telemetry ===
+                          false ||
+                        reference.environment.serverConfig.observability
+                          .productTelemetryDisabledByEnvironment === true
+                          ? false
+                          : reference.settings.telemetryEnabled
+                      }
+                      disabled={
+                        disabledFor("telemetryEnabled") ||
+                        reference.environment.serverConfig.managedPolicy?.limits?.telemetry ===
+                          false ||
+                        reference.environment.serverConfig.observability
+                          .productTelemetryDisabledByEnvironment === true
+                      }
+                      onValueChange={(value) => write({ telemetryEnabled: value })}
+                    />
+                  </SettingsSection>
+                ) : null}
                 {!projectSelected ? (
                   <DatabaseStorageNotice
                     targets={selectedTargets.filter(

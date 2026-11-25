@@ -12,6 +12,12 @@ are sent only when they appear in a provider's public model list.
 Product events do not include prompts, responses, file contents, authentication tokens, conversation IDs,
 raw provider events, or child-agent output.
 
+To stop sending product events, select an environment in **Settings > Maintenance > Diagnostics**
+on web or desktop and turn off **Share product usage data**. On mobile, select an environment in
+**Settings > Maintenance**. The preference applies to the selected server and all its connected
+clients. Turning it off takes effect immediately and discards events waiting to be sent. An
+environment variable or managed policy that disables telemetry takes precedence.
+
 ## Relay connection diagnostics
 
 T3 Code sends relay connection traces to Axiom to diagnose T3 Connect connectivity. These are
@@ -19,7 +25,7 @@ separate from product events. Depending on the client version, traces can includ
 timings, environment identifiers and the connected machine's name. Failed spans can include error
 messages and stack traces; error text can quote a value the app was handling.
 
-To disable product events and relay tracing from the server, set
+To disable both product events and relay tracing from the server, set
 `T3CODE_TELEMETRY_ENABLED=false` in its environment before starting it. Relay tracing also stops
 when `T3CODE_OTEL_SDK_DISABLED` or `OTEL_SDK_DISABLED` turns OpenTelemetry export off.
 

@@ -245,6 +245,10 @@ describe("settings search targets", () => {
     expect(isSettingsSearchScopeAvailable(target.scope, "all")).toBe(false);
     expect(isSettingsSearchScopeAvailable(target.scope, "project")).toBe(false);
     expect(isSettingsSearchScopeAvailable(target.scope, "environment")).toBe(true);
+    const usage = searchSettings("share product usage data").find(
+      (item) => item.id === "share-product-usage-data",
+    )!;
+    expect(getSettingsSearchTargetScope(usage.targetId ?? usage.id)?.scope).toBe("environment");
   });
 
   it("keeps environment-wide settings out of project scopes", () => {

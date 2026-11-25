@@ -280,6 +280,10 @@ export class ServerSettingsService extends Context.Service<
 
     /** Subscribe before reading a snapshot to retain changes before lazy stream startup. */
     readonly subscribeChanges: Effect.Effect<Stream.Stream<ServerSettings>, never, Scope.Scope>;
+
+    readonly observeTelemetry?: (
+      observer: (enabled: boolean) => Effect.Effect<void>,
+    ) => Effect.Effect<void, ServerSettingsError, Scope.Scope>;
   }
 >()("t3/serverSettings/ServerSettingsService") {
   static readonly layerTest = (
@@ -306,6 +310,7 @@ const makeTest = Effect.fn("serverSettings.makeTest")(function* (
   });
   const currentSettingsRef = yield* Ref.make<ServerSettings>(initialSettings);
   const writeSemaphore = yield* Semaphore.make(1);
+  const telemetryObservers = new Set<(enabled: boolean) => Effect.Effect<void>>();
   const getSettings = Ref.get(currentSettingsRef).pipe(Effect.map(resolveTextGenerationProvider));
 
   const updateTestSettings = (
@@ -316,6 +321,15 @@ const makeTest = Effect.fn("serverSettings.makeTest")(function* (
         Effect.flatMap(update),
         Effect.flatMap(normalizeServerSettings),
         Effect.tap((nextSettings) => Ref.set(currentSettingsRef, nextSettings)),
+        Effect.tap((nextSettings) =>
+          Effect.forEach(
+            telemetryObservers,
+            (observer) => observer(nextSettings.telemetryEnabled),
+            {
+              discard: true,
+            },
+          ),
+        ),
         Effect.map(resolveTextGenerationProvider),
       ),
     );
@@ -341,6 +355,18 @@ const makeTest = Effect.fn("serverSettings.makeTest")(function* (
       writeSemaphore.withPermits(1)(getSettings.pipe(Effect.flatMap(use))),
     streamChanges: Stream.empty,
     subscribeChanges: Effect.succeed(Stream.empty),
+    observeTelemetry: (observer) =>
+      writeSemaphore.withPermits(1)(
+        Effect.gen(function* () {
+          telemetryObservers.add(observer);
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              telemetryObservers.delete(observer);
+            }),
+          );
+          yield* observer((yield* Ref.get(currentSettingsRef)).telemetryEnabled);
+        }),
+      ),
   } satisfies ServerSettingsService["Service"];
 });
 
@@ -688,13 +714,16 @@ const make = Effect.gen(function* () {
   const writeSemaphore = yield* Semaphore.make(1);
   const cacheKey = "settings" as const;
   const changesPubSub = yield* PubSub.unbounded<ServerSettings>();
+  const telemetryObservers = new Set<(enabled: boolean) => Effect.Effect<void>>();
   const startedRef = yield* Ref.make(false);
   const startedDeferred = yield* Deferred.make<void, ServerSettingsError>();
   const watcherScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(watcherScope, Exit.void));
 
   const emitChange = (settings: ServerSettings) =>
-    PubSub.publish(changesPubSub, settings).pipe(Effect.asVoid);
+    Effect.forEach(telemetryObservers, (observer) => observer(settings.telemetryEnabled), {
+      discard: true,
+    }).pipe(Effect.andThen(PubSub.publish(changesPubSub, settings)), Effect.asVoid);
 
   const readConfigExists = fs.exists(settingsPath).pipe(
     Effect.mapError(
@@ -1413,7 +1442,7 @@ const make = Effect.gen(function* () {
 
     const startup = Effect.gen(function* () {
       yield* startWatcher;
-      yield* reloadSettings;
+      yield* revalidateAndEmit;
     });
 
     const startupExit = yield* Effect.exit(startup);
@@ -1446,6 +1475,19 @@ const make = Effect.gen(function* () {
         }),
       ),
     withSettingsSnapshot,
+    observeTelemetry: (observer) =>
+      writeSemaphore.withPermits(1)(
+        Effect.gen(function* () {
+          const settings = yield* getSettingsFromCache;
+          telemetryObservers.add(observer);
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              telemetryObservers.delete(observer);
+            }),
+          );
+          yield* observer(settings.telemetryEnabled);
+        }),
+      ),
     get streamChanges() {
       return materializeChanges(Stream.fromPubSub(changesPubSub));
     },

@@ -42,16 +42,12 @@ otherwise here (5-15 minutes, logged to the file it names). The device id may be
 prints one JSON line; on failure it names the next command. Mobile verification
 includes that step unless the user prohibits it.
 
-For a device you opened in an agent-device session elsewhere (a device pool,
-cloud, or remote host), run `vp run mobile:install <ios|android> --session <s>
---config <file>` from the directory you opened the session in, passing the
-`--config` file from `device_open`'s `targetArgs`. Without it, a device pool's
-gateway refuses the install, wrongly saying agent-device is too old. It installs
-the cached build into that session (`--abi arm64-v8a` for an ARM Android device;
-pool Android emulators are x86_64, the default; `--metro <url>` also opens it
-against Metro). Without a cached build for this checkout it builds first, which can
-outlast the lease, so run `vp run mobile:install <ios|android> --prepare` (with
-the same `--abi`) before you open the device.
+For a device-pool, cloud, or remote-host session, use the session-specific
+`--session` and `--config` values returned by `device_open` when installing.
+Choose `--abi` for the device architecture and `--metro <url>` only when the
+session must open against a separate Metro origin. If a build may outlast the
+session lease, prepare the matching build before opening the device. Use the
+regular device install command above for a locally connected device.
 
 Start `vp run dev:client` from `apps/mobile`, or reuse a healthy Metro belonging
 to this checkout. Open its printed development-client URL with AgentDevice

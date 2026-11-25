@@ -1,4 +1,9 @@
 {
+  "1da24c3ffce24703": "Product usage data",
+  "eaad73175f488b20": "Share product usage data",
+  "7013265439303a98": "Share product usage events from this environment.",
+  "deb74c518fd8a766": "Disabled by T3CODE_TELEMETRY_ENABLED on this environment.",
+  "f3385eef3f9ad0d1": "analytics telemetry privacy opt out",
   "23be753133ae6950": "Тред",
   "0001ae5846061bb6": "Тред на {machine}",
   "eef7f4dacbc3c3f2": "Машина",

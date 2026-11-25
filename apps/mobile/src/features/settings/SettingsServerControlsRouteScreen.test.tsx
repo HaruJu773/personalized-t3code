@@ -143,16 +143,28 @@ vi.mock("./settings-environment-filter", () => ({
 }));
 
 import {
+  SettingsEnvironmentMaintenanceRouteScreen,
   SettingsThreadsRouteScreen,
   SettingsWorktreesRouteScreen,
 } from "./SettingsServerControlsRouteScreen";
 
-function environment(environmentId: string, label: string) {
+function environment(
+  environmentId: string,
+  label: string,
+  options: { supported?: boolean; overridden?: boolean; managed?: boolean } = {},
+) {
   return {
     environmentId,
     label,
     connection: { phase: "connected" },
     serverConfig: {
+      observability: {
+        productTelemetrySupported: options.supported ?? false,
+        productTelemetryDisabledByEnvironment: options.overridden ?? false,
+      },
+      managedPolicy: options.managed
+        ? { organization: "Example", lockedSettings: [], limits: { telemetry: false } }
+        : undefined,
       settings: {
         ...DEFAULT_SERVER_SETTINGS,
         defaultAutoPull: false,
@@ -185,6 +197,50 @@ afterEach(() => {
 });
 
 describe("SettingsServerControlsRouteScreen", () => {
+  it("controls product usage data only for a supported writable environment", async () => {
+    mocks.targets = [environment("local", "Local", { supported: true })];
+    act(() => root.render(<SettingsEnvironmentMaintenanceRouteScreen key="initial" />));
+    const toggle = () =>
+      [...container.querySelectorAll<HTMLButtonElement>('[role="switch"]')].find(
+        (button) => button.textContent === "Share product usage data",
+      )!;
+    expect(toggle().getAttribute("aria-checked")).toBe("true");
+    await act(async () => toggle().click());
+    expect(mocks.updateSettings).toHaveBeenCalledWith({
+      environmentId: "local",
+      input: { patch: { telemetryEnabled: false } },
+    });
+
+    mocks.targets = [environment("local", "Local", { supported: true, overridden: true })];
+    act(() => root.render(<SettingsEnvironmentMaintenanceRouteScreen key="overridden" />));
+    expect(toggle().disabled).toBe(true);
+    expect(toggle().getAttribute("aria-checked")).toBe("false");
+
+    mocks.targets = [environment("local", "Local", { supported: true, managed: true })];
+    act(() => root.render(<SettingsEnvironmentMaintenanceRouteScreen key="managed" />));
+    expect(toggle().disabled).toBe(true);
+    expect(toggle().getAttribute("aria-checked")).toBe("false");
+
+    mocks.targets = [environment("local", "Local")];
+    act(() => root.render(<SettingsEnvironmentMaintenanceRouteScreen key="old" />));
+    expect(container.textContent).not.toContain("Share product usage data");
+
+    mocks.targets = [environment("local", "Local", { supported: true })];
+    mocks.readOnly = new Set(["local"]);
+    act(() => root.render(<SettingsEnvironmentMaintenanceRouteScreen key="read-only" />));
+    expect(toggle().disabled).toBe(true);
+
+    mocks.readOnly = new Set();
+    mocks.targets.push(environment("remote", "Remote", { supported: true }));
+    act(() => root.render(<SettingsEnvironmentMaintenanceRouteScreen key="multiple" />));
+    expect(container.textContent).not.toContain("Share product usage data");
+
+    mocks.targets = [environment("local", "Local", { supported: true })];
+    mocks.projectSelected = true;
+    act(() => root.render(<SettingsEnvironmentMaintenanceRouteScreen key="project" />));
+    expect(container.textContent).not.toContain("Share product usage data");
+  });
+
   it("sends a draft saved during a pending write once that write settles", async () => {
     const pending = Promise.withResolvers<AsyncResult.Success<void>>();
     mocks.updateSettings.mockReturnValueOnce(pending.promise);

@@ -2,6 +2,8 @@ import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- A synchronous digest inside the pure provider mapping.
 import * as NodeCrypto from "node:crypto";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Config from "effect/Config";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Context from "effect/Context";
 import * as NodeHttpServerRequest from "@effect/platform-node/NodeHttpServerRequest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -1839,6 +1841,23 @@ export const layerWsRpc = (
           yield* serverSettings.getSettings,
           settingsClient,
         );
+        const hostEnvironment = yield* HostProcess.Environment;
+        const telemetryVariable = hostEnvironment.T3CODE_TELEMETRY_ENABLED;
+        const productTelemetryEnabledByEnvironment = yield* Config.Boolean(
+          "T3CODE_TELEMETRY_ENABLED",
+        ).pipe(
+          Config.withDefault(true),
+          Effect.provideService(
+            ConfigProvider.ConfigProvider,
+            ConfigProvider.fromEnv({
+              env:
+                telemetryVariable === undefined
+                  ? {}
+                  : { T3CODE_TELEMETRY_ENABLED: telemetryVariable },
+            }),
+          ),
+          Effect.orElseSucceed(() => false),
+        );
         const environment = yield* serverEnvironment.getDescriptor;
         const auth = yield* serverAuth.getDescriptor();
         const scratchWorkspaceRoot = yield* managedFolders.scratchRoot;
@@ -1865,6 +1884,8 @@ export const layerWsRpc = (
           providers,
           ...discovery,
           observability: {
+            productTelemetrySupported: true,
+            productTelemetryDisabledByEnvironment: !productTelemetryEnabledByEnvironment,
             logsDirectoryPath: config.logsDir,
             localTracingEnabled: true,
             ...(config.otlpTracesUrl !== undefined

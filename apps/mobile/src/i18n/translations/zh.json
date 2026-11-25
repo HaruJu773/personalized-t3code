@@ -1,4 +1,9 @@
 {
+  "1da24c3ffce24703": "产品使用数据",
+  "eaad73175f488b20": "分享产品使用数据",
+  "df9fc7d495a718af": "已由 {organization} 禁用。",
+  "deb74c518fd8a766": "此环境已通过 T3CODE_TELEMETRY_ENABLED 禁用。",
+  "7013265439303a98": "分享此环境的产品使用事件。",
   "23be753133ae6950": "会话",
   "0001ae5846061bb6": "{machine} 上的会话",
   "eef7f4dacbc3c3f2": "机器",

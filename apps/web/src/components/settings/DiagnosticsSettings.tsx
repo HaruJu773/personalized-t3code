@@ -5,7 +5,7 @@ import { resolveUsageAccess } from "@t3tools/client-runtime/state/usage-access";
 import { environmentSession } from "../../state/session";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
-import { AuthEnvironmentMaintainScope } from "@t3tools/contracts";
+import { AuthEnvironmentMaintainScope, AuthSettingsWriteScope } from "@t3tools/contracts";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import {
   AlertTriangleIcon,
@@ -39,6 +39,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { Button } from "../ui/button";
+import { Switch } from "../ui/switch";
 import { ScrollArea } from "../ui/scroll-area";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -47,10 +48,12 @@ import { formatDiagnosticsDuration } from "./DiagnosticsSettings.logic";
 import { ExpandableText } from "./ExpandableText";
 import { ResourceTelemetryDiagnostics } from "./ResourceTelemetryDiagnostics";
 import { formatCpuTime } from "./ResourceTelemetryDiagnostics.logic";
-import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
+import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { TelemetryExportSettings } from "./TelemetryExportSettings";
+import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
+import { managedTelemetryOffMessage } from "../../state/managedPolicy";
 
 const NUMBER_FORMAT = new Intl.NumberFormat();
 
@@ -787,6 +790,12 @@ function DiagnosticsSettingsBody() {
   const environmentId = environment?.environmentId ?? null;
   const canMaintainEnvironment = useEnvironmentScope(environmentId, AuthEnvironmentMaintainScope);
   const observability = environment?.serverConfig?.observability;
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const canWriteSettings = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
+  const managedTelemetry = managedTelemetryOffMessage(environment?.serverConfig?.managedPolicy, m);
+  const telemetryEnvironmentOverride =
+    observability?.productTelemetryDisabledByEnvironment === true;
   const availableEditors = environment?.serverConfig?.availableEditors;
   const canOpenHostEditor = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const session = useEnvironmentQuery(
@@ -987,10 +996,40 @@ function DiagnosticsSettingsBody() {
   const traceDiagnosticsPartialFailure = data
     ? Option.getOrElse(data.partialFailure, () => false)
     : false;
+  const productUsageSection = observability?.productTelemetrySupported === true && (
+    <SettingsSection title={gt("Product usage data")} id="product-usage-data">
+      <SettingsRow
+        id="share-product-usage-data"
+        serverScoped
+        settingKeys={["telemetryEnabled"]}
+        title={gt("Share product usage data")}
+        description={gt("Share product usage events from this environment.")}
+        status={
+          managedTelemetry ??
+          (telemetryEnvironmentOverride
+            ? gt("Disabled by T3CODE_TELEMETRY_ENABLED on this environment.")
+            : undefined)
+        }
+        control={
+          <Switch
+            aria-label={gt("Share product usage data")}
+            checked={
+              !managedTelemetry && !telemetryEnvironmentOverride && settings.telemetryEnabled
+            }
+            disabled={
+              !canWriteSettings || Boolean(managedTelemetry) || telemetryEnvironmentOverride
+            }
+            onCheckedChange={(checked) => updateSettings({ telemetryEnabled: Boolean(checked) })}
+          />
+        }
+      />
+    </SettingsSection>
+  );
 
   if (!canReadDiagnostics) {
     return (
       <SettingsPageContainer>
+        {productUsageSection}
         <p className="text-sm text-muted-foreground">
           {environmentId === null
             ? gt("Connect an environment to see diagnostics.")
@@ -1442,6 +1481,7 @@ function DiagnosticsSettingsBody() {
           />
         )}
       </SettingsSection>
+      {productUsageSection}
       {exportFormEnvironmentId === environmentId && <TelemetryExportSettings />}
     </SettingsPageContainer>
   );
